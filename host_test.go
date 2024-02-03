@@ -1,6 +1,9 @@
 package ssh_client
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func Test_parseSshURI(t *testing.T) {
 	testData := []struct {
@@ -47,4 +50,70 @@ func Test_parseSshURI(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigure(t *testing.T) {
+	testData := []struct {
+		URI  string
+		Host string
+		Port string
+		User string
+	}{
+		{
+			URI:  "u@h:p",
+			Host: "h",
+			Port: "p",
+			User: "u",
+		},
+		{
+			URI:  "ssh://u@h:p",
+			Host: "h",
+			Port: "p",
+			User: "u",
+		},
+		{
+			URI:  "h:p",
+			Host: "h",
+			Port: "p",
+		},
+		{
+			URI:  "u@h",
+			Host: "h",
+			User: "u",
+			Port: "22",
+		},
+		{
+			URI:  "h",
+			Host: "h",
+			Port: "22",
+		},
+		{
+			URI:  "configured-myhost",
+			Host: "myhost",
+			Port: "2222",
+			User: "remoteuser",
+		},
+	}
+
+	cfgfile, err := filepath.Abs("testdata/ssh_config")
+	if err != nil {
+		t.Fatalf("cannot read testdata/ssh_config: %v", err)
+	}
+	cfg, err := OpenSSHConfig(cfgfile)
+	if err != nil {
+		t.Fatalf("cannot read testdata/ssh_config: %v", err)
+	}
+
+	for _, tc := range testData {
+		t.Run(tc.URI, func(t *testing.T) {
+			h := ParseSshURI(tc.URI)
+			h.Configure(cfg)
+			if h.User != tc.User ||
+				h.Hostname != tc.Host ||
+				h.Port != tc.Port {
+				t.Errorf("Failed to parse URI into (user,host,port) got (%s,%s,%s) want (%s,%s,%s)", h.User, h.Hostname, h.Port, tc.User, tc.Host, tc.Port)
+			}
+		})
+	}
+
 }

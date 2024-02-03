@@ -1,0 +1,5 @@
+
+Host configured-myhost
+	Hostname myhost
+	User remoteuser
+	Port 2222

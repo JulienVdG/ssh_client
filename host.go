@@ -2,8 +2,6 @@ package ssh_client
 
 import (
 	"strings"
-
-	"github.com/kevinburke/ssh_config"
 )
 
 type Host struct {
@@ -43,17 +41,22 @@ func ParseSshURI(uri string) *Host {
 	}
 }
 
-func (h *Host) Configure(u *ssh_config.UserSettings) error {
+type sshSettingsGetter interface {
+	Get(alias, key string) string
+	GetAll(alias, key string) []string
+}
+
+func (h *Host) Configure(cfg sshSettingsGetter) error {
 	if h.Port == "" {
-		h.Port = u.Get(h.Name, "Port")
+		h.Port = cfg.Get(h.Name, "Port")
 	}
-	h.Hostname = u.Get(h.Name, "Hostname")
+	h.Hostname = cfg.Get(h.Name, "Hostname")
 	// Default to Name
 	if h.Hostname == "" {
 		h.Hostname = h.Name
 	}
 	if h.User == "" {
-		h.User = u.Get(h.Name, "User")
+		h.User = cfg.Get(h.Name, "User")
 	}
 	return nil
 }
