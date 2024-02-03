@@ -4,11 +4,17 @@ import (
 	"strings"
 )
 
+type sshSettingsGetter interface {
+	Get(alias, key string) string
+	GetAll(alias, key string) []string
+}
+
 type Host struct {
 	Name     string
 	Hostname string
 	Port     string
 	User     string
+	cfg      sshSettingsGetter
 }
 
 func parseSshURI(uri string) (user, host, port string) {
@@ -41,12 +47,8 @@ func ParseSshURI(uri string) *Host {
 	}
 }
 
-type sshSettingsGetter interface {
-	Get(alias, key string) string
-	GetAll(alias, key string) []string
-}
-
 func (h *Host) Configure(cfg sshSettingsGetter) error {
+	h.cfg = cfg
 	if h.Port == "" {
 		h.Port = cfg.Get(h.Name, "Port")
 	}
@@ -63,4 +65,12 @@ func (h *Host) Configure(cfg sshSettingsGetter) error {
 
 func (h *Host) Addr() string {
 	return h.Hostname + ":" + h.Port
+}
+
+func (h *Host) ConfigGet(key string) string {
+	return h.cfg.Get(h.Name, key)
+}
+
+func (h *Host) ConfigGetAll(key string) []string {
+	return h.cfg.GetAll(h.Name, key)
 }
