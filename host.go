@@ -81,3 +81,24 @@ func (h *Host) ConfigGet(key string) string {
 func (h *Host) ConfigGetAll(key string) []string {
 	return h.cfg.GetAll(h.Name, key)
 }
+
+func (h *Host) KnownHosts() []string {
+	u := h.ConfigGet("UserKnownHostsFile")
+	f := strings.Split(u, " ")
+	for i := range f {
+		f[i] = h.ExpandTokens(ExpandHome(f[i]))
+	}
+	g := h.ConfigGet("GlobalKnownHostsFile")
+	f = append(f, strings.Split(g, " ")...)
+	var knownHostFiles []string
+	for i := range f {
+		info, err := os.Stat(f[i])
+		if err != nil {
+			continue
+		}
+		if info.Mode().IsRegular() {
+			knownHostFiles = append(knownHostFiles, f[i])
+		}
+	}
+	return knownHostFiles
+}
