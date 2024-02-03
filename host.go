@@ -47,7 +47,7 @@ func ParseSshURI(uri string) *Host {
 	}
 }
 
-func (h *Host) Configure(cfg sshSettingsGetter) error {
+func (h *Host) configure(cfg sshSettingsGetter, currentUsername func() string) error {
 	h.cfg = cfg
 	if h.Port == "" {
 		h.Port = cfg.Get(h.Name, "Port")
@@ -60,7 +60,14 @@ func (h *Host) Configure(cfg sshSettingsGetter) error {
 	if h.User == "" {
 		h.User = cfg.Get(h.Name, "User")
 	}
+	if h.User == "" {
+		h.User = currentUsername()
+	}
 	return nil
+}
+
+func (h *Host) Configure(cfg sshSettingsGetter) error {
+	return h.configure(cfg, currentUsername)
 }
 
 func (h *Host) Addr() string {

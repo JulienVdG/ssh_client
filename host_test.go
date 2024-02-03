@@ -52,7 +52,7 @@ func Test_parseSshURI(t *testing.T) {
 	}
 }
 
-func TestConfigure(t *testing.T) {
+func Test_configure(t *testing.T) {
 	testData := []struct {
 		URI  string
 		Host string
@@ -107,7 +107,17 @@ func TestConfigure(t *testing.T) {
 	for _, tc := range testData {
 		t.Run(tc.URI, func(t *testing.T) {
 			h := ParseSshURI(tc.URI)
-			h.Configure(cfg)
+			var called bool
+			h.configure(cfg, func() string {
+				called = true
+				return ""
+			})
+			if called && tc.User != "" {
+				t.Error("currentUsername called while it should not")
+			}
+			if !called && tc.User == "" {
+				t.Error("currentUsername not called while it should have")
+			}
 			if h.User != tc.User ||
 				h.Hostname != tc.Host ||
 				h.Port != tc.Port {

@@ -16,6 +16,15 @@ func homedir() string {
 	}
 }
 
+func currentUsername() string {
+	user, err := osuser.Current()
+	if err == nil {
+		return user.Username
+	} else {
+		return os.Getenv("USER")
+	}
+}
+
 func userdir(user string) string {
 	u, err := osuser.Lookup(user)
 	if err != nil {
