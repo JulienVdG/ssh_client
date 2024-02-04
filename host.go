@@ -24,6 +24,7 @@ type Host struct {
 	Port     string
 	User     string
 	cfg      sshSettingsGetter
+	*ssh.ClientConfig
 }
 
 func parseSshURI(uri string) (user, host, port string) {
@@ -54,6 +55,15 @@ func ParseSshURI(uri string) *Host {
 		Port:     p,
 		User:     u,
 	}
+}
+
+func New(uri string, cfg sshSettingsGetter) (*Host, error) {
+	h := ParseSshURI(uri)
+	err := h.configure(cfg, currentUsername)
+	if err != nil {
+		return nil, err
+	}
+	return h, nil
 }
 
 func (h *Host) configure(cfg sshSettingsGetter, currentUsername func() string) error {
@@ -223,7 +233,12 @@ func (h *Host) GetSigners() ([]ssh.Signer, error) {
 	return cb()
 }
 
-func (h *Host) ClientConfig() (*ssh.ClientConfig, error) {
+// TODO: add options to customize config
+// TODO: make thread safe ?
+func (h *Host) GetClientConfig() (*ssh.ClientConfig, error) {
+	if h.ClientConfig != nil {
+		return h.ClientConfig, nil
+	}
 	hostKeyCallback, err := knownhosts.New(h.KnownHosts()...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create host key callback: %w", err)
@@ -239,6 +254,80 @@ func (h *Host) ClientConfig() (*ssh.ClientConfig, error) {
 		},
 		HostKeyCallback: hostKeyCallback,
 	}
+	h.ClientConfig = cfg
 
 	return cfg, nil
+}
+
+func (h *Host) ProxyJump() []string {
+	pJump := h.ConfigGet("ProxyJump")
+	p := strings.Split(pJump, ",")
+	for i := range p {
+		p[i] = h.ExpandTokens(p[i])
+	}
+	return p
+}
+
+func (h *Host) ProxyJumpHosts() ([]*Host, error) {
+	p := h.ProxyJump()
+	ph := make([]*Host, len(p))
+	for i := range p {
+		nh, err := New(p[i], h.cfg)
+		if err != nil {
+			return nil, fmt.Errorf("Preparing ProxyJump[%d]: %w", i, err)
+		}
+		ph[i] = nh
+	}
+	return ph, nil
+}
+
+func (h *Host) Dial(network string) (*ssh.Client, error) {
+	pCmd := h.ConfigGet("ProxyCommand")
+	if pCmd != "" {
+		return nil, errors.New("ProxyCommand is not supported use ProxyJump instead where possible")
+	}
+
+	config, err := h.GetClientConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	proxyJumpHosts, err := h.ProxyJumpHosts()
+	if err != nil {
+		return nil, err
+	}
+
+	// Full lust of hosts to connect
+	hosts := append(proxyJumpHosts, h)
+
+	// initial connection
+	conn, err := net.DialTimeout(network, hosts[0].Addr(), config.Timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, proxyHost := range proxyJumpHosts {
+		client, err := proxyHost.NewClient(conn)
+		if err != nil {
+			return nil, fmt.Errorf("ProxyJump[%d] Client: %w", i, err)
+		}
+		conn, err = client.Dial(network, hosts[i+1].Addr())
+		if err != nil {
+			return nil, fmt.Errorf("ProxyJump[%d] Dial: %w", i, err)
+		}
+	}
+
+	return h.NewClient(conn)
+}
+
+func (h *Host) NewClient(conn net.Conn) (*ssh.Client, error) {
+	config, err := h.GetClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, chans, reqs, err := ssh.NewClientConn(conn, h.Addr(), config)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewClient(c, chans, reqs), nil
 }
