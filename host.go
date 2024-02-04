@@ -1,7 +1,12 @@
 package ssh_client
 
 import (
+	"fmt"
+	"net"
+	"os"
 	"strings"
+
+	"golang.org/x/crypto/ssh/agent"
 )
 
 type sshSettingsGetter interface {
@@ -101,4 +106,31 @@ func (h *Host) KnownHosts() []string {
 		}
 	}
 	return knownHostFiles
+}
+
+func (h *Host) AgentSockName() string {
+	n := h.ConfigGet("IdentityAgent")
+	n = ExpandHome(n)
+	n = h.ExpandTokens(n)
+	n = os.ExpandEnv(n)
+	if n == "SSH_AUTH_SOCK" {
+		n = os.Getenv("SSH_AUTH_SOCK")
+	}
+	return n
+}
+
+var ErrAgentDisabled = errors.New("SSH Agent Disabled")
+
+// TODO once or cache
+func (h *Host) Agent() (agent.ExtendedAgent, error) {
+	socket := h.AgentSockName()
+	if strings.ToLower(socket) == "none" {
+		return nil, ErrAgentDisabled
+	}
+	agentConn, err := net.Dial("unix", socket)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open Agent (on %s): %w", socket, err)
+	}
+	agentClient := agent.NewClient(agentConn)
+	return agentClient, nil
 }
