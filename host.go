@@ -1,11 +1,14 @@
 package ssh_client
 
 import (
+	"errors"
 	"fmt"
+
 	"net"
 	"os"
 	"strings"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
 
@@ -110,6 +113,11 @@ func (h *Host) KnownHosts() []string {
 
 func (h *Host) AgentSockName() string {
 	n := h.ConfigGet("IdentityAgent")
+	// ssh_config does not handle IdentityAgent and its SSH_AUTH_SOCK default.
+	if n == "" {
+		n = "SSH_AUTH_SOCK"
+	}
+
 	n = ExpandHome(n)
 	n = h.ExpandTokens(n)
 	n = os.ExpandEnv(n)
@@ -133,4 +141,73 @@ func (h *Host) Agent() (agent.ExtendedAgent, error) {
 	}
 	agentClient := agent.NewClient(agentConn)
 	return agentClient, nil
+}
+
+func (h *Host) IdentitiesOnly() bool {
+	switch strings.ToLower(h.ConfigGet("IdentitiesOnly")) {
+	case "true", "yes":
+		return true
+	case "false", "no":
+		return false
+	default:
+		// TODO: fail or at least log
+		return false
+	}
+}
+
+func (h *Host) IdentityPublicKeys() []ssh.PublicKey {
+	identityFiles := h.ConfigGetAll("IdentityFile")
+	var pubKeys []ssh.PublicKey
+	for _, file := range identityFiles {
+		fname := ExpandHome(file)
+		fname = h.ExpandTokens(fname)
+		fname += ".pub"
+		content, err := os.ReadFile(fname)
+		if err != nil {
+			// TODO slog and only when not from DefaultValues
+			// fmt.Printf("could not read %s: %v\n", fname, err)
+			continue
+		}
+
+		k, _, _, _, err := ssh.ParseAuthorizedKey(content)
+		if err != nil {
+			// TODO slog
+			fmt.Printf("could not parse %s: %v\n%s\n", fname, err, string(content))
+			continue
+		}
+		pubKeys = append(pubKeys, k)
+	}
+	return pubKeys
+}
+
+func (h *Host) GetSigners() ([]ssh.Signer, error) {
+	agentClient, err := h.Agent()
+	if err != nil {
+		return nil, fmt.Errorf("SSH Agent Required: %w", err)
+	}
+	if !h.IdentitiesOnly() {
+		// Ignore identities from config, loading them is not implemented, assume the required ones are loaded.
+		return agentClient.Signers()
+	}
+	// IdentitiesOnly=yes so we need to filter agent Signers according to identities in config.
+
+	hasKeys := make(map[string]bool)
+	for _, k := range h.IdentityPublicKeys() {
+		hash := string(k.Marshal())
+		hasKeys[hash] = true
+	}
+
+	agentSigners, err := agentClient.Signers()
+	if err != nil {
+		return nil, err
+	}
+	var signers []ssh.Signer
+	for i := range agentSigners {
+		hash := string(agentSigners[i].PublicKey().Marshal())
+		if hasKeys[hash] {
+			//fmt.Println("found matching pubkey in agent")
+			signers = append(signers, agentSigners[i])
+		}
+	}
+	return signers, nil
 }
