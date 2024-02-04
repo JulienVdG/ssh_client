@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 type sshSettingsGetter interface {
@@ -180,34 +181,64 @@ func (h *Host) IdentityPublicKeys() []ssh.PublicKey {
 	return pubKeys
 }
 
-func (h *Host) GetSigners() ([]ssh.Signer, error) {
+func (h *Host) GetSignersCallback() (func() ([]ssh.Signer, error), error) {
 	agentClient, err := h.Agent()
 	if err != nil {
 		return nil, fmt.Errorf("SSH Agent Required: %w", err)
 	}
 	if !h.IdentitiesOnly() {
-		// Ignore identities from config, loading them is not implemented, assume the required ones are loaded.
-		return agentClient.Signers()
+		// Ignore identities from config, loading privateKeys is not implemented, assume the required ones are loaded.
+		return agentClient.Signers, nil
 	}
-	// IdentitiesOnly=yes so we need to filter agent Signers according to identities in config.
 
+	// IdentitiesOnly=yes so we need to filter agent Signers according to identities in config.
 	hasKeys := make(map[string]bool)
 	for _, k := range h.IdentityPublicKeys() {
 		hash := string(k.Marshal())
 		hasKeys[hash] = true
 	}
 
-	agentSigners, err := agentClient.Signers()
+	cb := func() ([]ssh.Signer, error) {
+		agentSigners, err := agentClient.Signers()
+		if err != nil {
+			return nil, err
+		}
+		var signers []ssh.Signer
+		for i := range agentSigners {
+			hash := string(agentSigners[i].PublicKey().Marshal())
+			if hasKeys[hash] {
+				//fmt.Println("found matching pubkey in agent")
+				signers = append(signers, agentSigners[i])
+			}
+		}
+		return signers, nil
+	}
+	return cb, nil
+}
+func (h *Host) GetSigners() ([]ssh.Signer, error) {
+	cb, err := h.GetSignersCallback()
 	if err != nil {
 		return nil, err
 	}
-	var signers []ssh.Signer
-	for i := range agentSigners {
-		hash := string(agentSigners[i].PublicKey().Marshal())
-		if hasKeys[hash] {
-			//fmt.Println("found matching pubkey in agent")
-			signers = append(signers, agentSigners[i])
-		}
+	return cb()
+}
+
+func (h *Host) ClientConfig() (*ssh.ClientConfig, error) {
+	hostKeyCallback, err := knownhosts.New(h.KnownHosts()...)
+	if err != nil {
+		return nil, fmt.Errorf("could not create host key callback: %w", err)
 	}
-	return signers, nil
+	getSigners, err := h.GetSignersCallback()
+	if err != nil {
+		return nil, fmt.Errorf("could not create key signers callback: %w", err)
+	}
+	cfg := &ssh.ClientConfig{
+		User: h.User,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeysCallback(getSigners),
+		},
+		HostKeyCallback: hostKeyCallback,
+	}
+
+	return cfg, nil
 }
