@@ -261,6 +261,9 @@ func (h *Host) GetClientConfig() (*ssh.ClientConfig, error) {
 
 func (h *Host) ProxyJump() []string {
 	pJump := h.ConfigGet("ProxyJump")
+	if pJump == "" {
+		return nil
+	}
 	p := strings.Split(pJump, ",")
 	for i := range p {
 		p[i] = h.ExpandTokens(p[i])
@@ -309,11 +312,11 @@ func (h *Host) Dial(network string) (*ssh.Client, error) {
 	for i, proxyHost := range proxyJumpHosts {
 		client, err := proxyHost.NewClient(conn)
 		if err != nil {
-			return nil, fmt.Errorf("ProxyJump[%d] Client: %w", i, err)
+			return nil, fmt.Errorf("ProxyJump[%d] '%s' Client: %w", i, proxyHost.Addr(), err)
 		}
 		conn, err = client.Dial(network, hosts[i+1].Addr())
 		if err != nil {
-			return nil, fmt.Errorf("ProxyJump[%d] Dial: %w", i, err)
+			return nil, fmt.Errorf("ProxyJump[%d] '%s' Dial: %w", i, hosts[i+1].Addr(), err)
 		}
 	}
 
