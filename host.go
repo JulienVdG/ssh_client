@@ -256,6 +256,8 @@ func (h *Host) GetClientConfig() (*ssh.ClientConfig, error) {
 			ssh.PublicKeysCallback(getSigners),
 		},
 		HostKeyCallback: hostKeyCallback,
+		// # run `ssh -Q HostKeyAlgorithms` to update order if needed.
+		HostKeyAlgorithms: []string{ssh.KeyAlgoED25519, ssh.KeyAlgoSKED25519, ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521, ssh.KeyAlgoSKECDSA256, ssh.KeyAlgoRSA, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512},
 	}
 	h.ClientConfig = cfg
 
