@@ -3,7 +3,6 @@ package ssh_client
 import (
 	"errors"
 	"fmt"
-
 	"net"
 	"os"
 	"strings"
@@ -71,7 +70,6 @@ func (h *Host) configure(cfg sshSettingsGetter, currentUsername func() string) e
 	if h.Port == "" {
 		h.Port = cfg.Get(h.Name, "Port")
 	}
-	h.Hostname = cfg.Get(h.Name, "Hostname")
 	// Default to Name
 	if h.Hostname == "" {
 		h.Hostname = h.Name
@@ -81,6 +79,10 @@ func (h *Host) configure(cfg sshSettingsGetter, currentUsername func() string) e
 	}
 	if h.User == "" {
 		h.User = currentUsername()
+	}
+	cfgHostname := h.ExpandTokens(cfg.Get(h.Name, "Hostname"))
+	if cfgHostname != "" {
+		h.Hostname = cfgHostname
 	}
 	return nil
 }
@@ -217,7 +219,7 @@ func (h *Host) GetSignersCallback() (func() ([]ssh.Signer, error), error) {
 		for i := range agentSigners {
 			hash := string(agentSigners[i].PublicKey().Marshal())
 			if hasKeys[hash] {
-				//fmt.Println("found matching pubkey in agent")
+				// fmt.Println("found matching pubkey in agent")
 				signers = append(signers, agentSigners[i])
 			}
 		}
@@ -225,6 +227,7 @@ func (h *Host) GetSignersCallback() (func() ([]ssh.Signer, error), error) {
 	}
 	return cb, nil
 }
+
 func (h *Host) GetSigners() ([]ssh.Signer, error) {
 	cb, err := h.GetSignersCallback()
 	if err != nil {
