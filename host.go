@@ -244,7 +244,7 @@ func (h *Host) GetClientConfig() (*ssh.ClientConfig, error) {
 	}
 	kh, err := knownhosts.NewDB(h.KnownHosts()...)
 	if err != nil {
-		return nil, fmt.Errorf("could not create host key callback: %w", err)
+		return nil, fmt.Errorf("could not parse knownhosts: %w", err)
 	}
 	getSigners, err := h.GetSignersCallback()
 	if err != nil {
