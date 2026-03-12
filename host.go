@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/skeema/knownhosts"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 type sshSettingsGetter interface {
@@ -242,7 +242,7 @@ func (h *Host) GetClientConfig() (*ssh.ClientConfig, error) {
 	if h.ClientConfig != nil {
 		return h.ClientConfig, nil
 	}
-	hostKeyCallback, err := knownhosts.New(h.KnownHosts()...)
+	kh, err := knownhosts.NewDB(h.KnownHosts()...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create host key callback: %w", err)
 	}
@@ -255,9 +255,8 @@ func (h *Host) GetClientConfig() (*ssh.ClientConfig, error) {
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeysCallback(getSigners),
 		},
-		HostKeyCallback: hostKeyCallback,
-		// # run `ssh -Q HostKeyAlgorithms` to update order if needed.
-		HostKeyAlgorithms: []string{ssh.KeyAlgoED25519, ssh.KeyAlgoSKED25519, ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521, ssh.KeyAlgoSKECDSA256, ssh.KeyAlgoRSA, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512},
+		HostKeyCallback:   kh.HostKeyCallback(),
+		HostKeyAlgorithms: kh.HostKeyAlgorithms(h.Addr()),
 	}
 	h.ClientConfig = cfg
 
